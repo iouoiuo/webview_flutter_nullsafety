@@ -266,8 +266,6 @@
     [self getScrollX:call result:result];
   } else if ([[call method] isEqualToString:@"getScrollY"]) {
     [self getScrollY:call result:result];
-  } else if ([[call method] isEqualToString:@"setUserTouchEnable"]) {
-      [self setUserTouchEnable:call result:result];
   } else {
     result(FlutterMethodNotImplemented);
   }
