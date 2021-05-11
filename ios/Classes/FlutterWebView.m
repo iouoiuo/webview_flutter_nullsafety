@@ -1,11 +1,106 @@
-// Copyright 2013 The Flutter Authors. All rights reserved.
+// Copyright 2018 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #import "FlutterWebView.h"
 #import "FLTWKNavigationDelegate.h"
-#import "FLTWKProgressionDelegate.h"
 #import "JavaScriptChannelHandler.h"
+
+@interface FlutterGestureWorkaround : UIGestureRecognizer <UIGestureRecognizerDelegate>
+
+@end
+
+@implementation FlutterGestureWorkaround {
+    id _flutterForwardGestureRecognizer;
+}
+
+- (id)flutterForwardGestureRecognizer {
+    if (_flutterForwardGestureRecognizer) {
+        return _flutterForwardGestureRecognizer;
+    }
+    Class klass = NSClassFromString(@"ForwardingGestureRecognizer");
+    if (klass == nil) {
+        NSLog(@"ForwardingGestureRecognizer not found, workaround will not work");
+        return nil;
+    }
+
+    NSPredicate *pred = [NSPredicate predicateWithBlock:^BOOL(id  _Nullable evaluatedObject, NSDictionary<NSString *,id> * _Nullable bindings) {
+        return [evaluatedObject isKindOfClass:klass];
+    }];
+    UIView *parent = self.view.superview;
+    id recognizer = [[parent.gestureRecognizers filteredArrayUsingPredicate:pred] firstObject];
+    while(parent != NULL && recognizer == NULL) {
+        parent = parent.superview;
+        recognizer = [[parent.gestureRecognizers filteredArrayUsingPredicate:pred] firstObject];
+    }
+
+    if (recognizer == NULL) {
+        NSLog(@"Could not find the ForwardingGestureRecognizer instance, workaround will not work");
+        return NULL;
+    }
+
+    _flutterForwardGestureRecognizer = recognizer;
+    return recognizer;
+}
+
+- (int)flutterForwardGestureRecognizerTouchCount {
+    id value = [self.flutterForwardGestureRecognizer valueForKey: @"_currentTouchPointersCount"];
+    if ([value isKindOfClass:[NSArray class]]) {
+        value = [value firstObject];
+    }
+    if ([value isKindOfClass:[NSNumber class]]) {
+        return (int)[value integerValue];
+    }
+    return 0;
+}
+
+- (instancetype)initWithTarget:(id)target action:(SEL)action {
+    self = [super initWithTarget:target action:action];
+    if (self) {
+      self.delegate = self;
+    }
+    return self;
+}
+
+- (void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+    self.state = UIGestureRecognizerStateBegan;
+}
+
+- (void)touchesEnded:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+    if (self.numberOfTouches == touches.count) {
+        self.state = UIGestureRecognizerStateEnded;
+
+
+        if (self.flutterForwardGestureRecognizerTouchCount != 0) {
+            [self.flutterForwardGestureRecognizer touchesCancelled:nil withEvent:nil];
+        }
+    }
+}
+
+- (void)touchesCancelled:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+    if (self.numberOfTouches == 0) {
+        self.state = UIGestureRecognizerStateCancelled;
+    }
+}
+
+- (void)touchesMoved:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {}
+
+- (BOOL)shouldBeRequiredToFailByGestureRecognizer:(UIGestureRecognizer *)otherGestureRecognizer {
+    return false;
+}
+
+- (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer shouldRecognizeSimultaneouslyWithGestureRecognizer:(UIGestureRecognizer *)otherGestureRecognizer {
+    return true;
+}
+
+- (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer shouldRequireFailureOfGestureRecognizer:(UIGestureRecognizer *)otherGestureRecognizer {
+    return false;
+}
+
+- (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer shouldBeRequiredToFailByGestureRecognizer:(UIGestureRecognizer *)otherGestureRecognizer {
+    return false;
+}
+@end
 
 @implementation FLTWebViewFactory {
   NSObject<FlutterBinaryMessenger>* _messenger;
@@ -15,6 +110,7 @@
   self = [super init];
   if (self) {
     _messenger = messenger;
+
   }
   return self;
 }
@@ -30,7 +126,8 @@
                                                                          viewIdentifier:viewId
                                                                               arguments:args
                                                                         binaryMessenger:_messenger];
-  return webviewController;
+    [webviewController.view addGestureRecognizer:[FlutterGestureWorkaround new]];
+    return webviewController;
 }
 
 @end
@@ -65,7 +162,6 @@
   // The set of registered JavaScript channel names.
   NSMutableSet* _javaScriptChannelNames;
   FLTWKNavigationDelegate* _navigationDelegate;
-  FLTWKProgressionDelegate* _progressionDelegate;
 }
 
 - (instancetype)initWithFrame:(CGRect)frame
@@ -89,7 +185,6 @@
     NSDictionary<NSString*, id>* settings = args[@"settings"];
 
     WKWebViewConfiguration* configuration = [[WKWebViewConfiguration alloc] init];
-    [self applyConfigurationSettings:settings toConfiguration:configuration];
     configuration.userContentController = userContentController;
     [self updateAutoMediaPlaybackPolicy:args[@"autoMediaPlaybackPolicy"]
                         inConfiguration:configuration];
@@ -116,16 +211,20 @@
 
     NSString* initialUrl = args[@"initialUrl"];
     if ([initialUrl isKindOfClass:[NSString class]]) {
+                //黑色背景
+        if([initialUrl containsString:@"theme=black"]){
+            _webView.scrollView.alwaysBounceVertical = false;
+            _webView.scrollView.bounces = false;
+            _webView.opaque = NO;
+            _webView.backgroundColor = [UIColor colorWithRed:53.0 / 255.0 green:64.0 / 255.0 blue:82.0 / 255.0 alpha:1.0];
+            _webView.scrollView.backgroundColor = [UIColor colorWithRed:53.0 / 255.0 green:64.0 / 255.0 blue:82.0 / 255.0 alpha:1.0];
+            _webView.scrollView.showsVerticalScrollIndicator = false;
+            _webView.scrollView.showsHorizontalScrollIndicator = false;
+        }
       [self loadUrl:initialUrl];
     }
   }
   return self;
-}
-
-- (void)dealloc {
-  if (_progressionDelegate != nil) {
-    [_progressionDelegate stopObservingProgress:_webView];
-  }
 }
 
 - (UIView*)view {
@@ -167,10 +266,13 @@
     [self getScrollX:call result:result];
   } else if ([[call method] isEqualToString:@"getScrollY"]) {
     [self getScrollY:call result:result];
+  } else if ([[call method] isEqualToString:@"setUserTouchEnable"]) {
+      [self setUserTouchEnable:call result:result];
   } else {
     result(FlutterMethodNotImplemented);
   }
 }
+
 
 - (void)onUpdateSettings:(FlutterMethodCall*)call result:(FlutterResult)result {
   NSString* error = [self applySettings:[call arguments]];
@@ -332,13 +434,6 @@
     } else if ([key isEqualToString:@"hasNavigationDelegate"]) {
       NSNumber* hasDartNavigationDelegate = settings[key];
       _navigationDelegate.hasDartNavigationDelegate = [hasDartNavigationDelegate boolValue];
-    } else if ([key isEqualToString:@"hasProgressTracking"]) {
-      NSNumber* hasProgressTrackingValue = settings[key];
-      bool hasProgressTracking = [hasProgressTrackingValue boolValue];
-      if (hasProgressTracking) {
-        _progressionDelegate = [[FLTWKProgressionDelegate alloc] initWithWebView:_webView
-                                                                         channel:_channel];
-      }
     } else if ([key isEqualToString:@"debuggingEnabled"]) {
       // no-op debugging is always enabled on iOS.
     } else if ([key isEqualToString:@"gestureNavigationEnabled"]) {
@@ -357,18 +452,6 @@
   }
   return [NSString stringWithFormat:@"webview_flutter: unknown setting keys: {%@}",
                                     [unknownKeys componentsJoinedByString:@", "]];
-}
-
-- (void)applyConfigurationSettings:(NSDictionary<NSString*, id>*)settings
-                   toConfiguration:(WKWebViewConfiguration*)configuration {
-  NSAssert(configuration != _webView.configuration,
-           @"configuration needs to be updated before webView.configuration.");
-  for (NSString* key in settings) {
-    if ([key isEqualToString:@"allowsInlineMediaPlayback"]) {
-      NSNumber* allowsInlineMediaPlayback = settings[key];
-      configuration.allowsInlineMediaPlayback = [allowsInlineMediaPlayback boolValue];
-    }
-  }
 }
 
 - (void)updateJsMode:(NSNumber*)mode {
