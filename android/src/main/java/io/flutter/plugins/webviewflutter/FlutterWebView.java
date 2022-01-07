@@ -130,8 +130,12 @@ public class FlutterWebView implements PlatformView, MethodCallHandler {
     }
     if (params.containsKey("initialUrl")) {
       String url = (String) params.get("initialUrl");
+      if (url.contains("theme=black")) {
+        webView.setBackgroundColor(0);
+      }
       webView.loadUrl(url);
     }
+    
   }
 
   @Override
