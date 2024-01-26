@@ -221,6 +221,14 @@
             _webView.scrollView.backgroundColor = [UIColor colorWithRed:8.0 / 255.0 green:6.0 / 255.0 blue:11.0 / 255.0 alpha:1.0];
             _webView.scrollView.showsVerticalScrollIndicator = false;
             _webView.scrollView.showsHorizontalScrollIndicator = false;
+        }else{
+           _webView.scrollView.alwaysBounceVertical = false;
+            _webView.scrollView.bounces = false;
+            _webView.opaque = NO;
+            _webView.backgroundColor = [UIColor colorWithRed:255.0 / 255.0 green:255.0 / 255.0 blue:255.0 / 255.0 alpha:1.0];
+            _webView.scrollView.backgroundColor = [UIColor colorWithRed:255.0 / 255.0 green:255.0 / 255.0 blue:255.0 / 255.0 alpha:1.0];
+            _webView.scrollView.showsVerticalScrollIndicator = false;
+            _webView.scrollView.showsHorizontalScrollIndicator = false;
         }
       [self loadUrl:initialUrl];
     }
